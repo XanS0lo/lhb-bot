@@ -1,2 +1,4 @@
 /node_modules
 /auth
+message.db
+message.db-journal
