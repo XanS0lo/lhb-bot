@@ -1,6 +1,8 @@
+const initDatabase = require("./db");
+const db = initDatabase(); // ← инициализация базы
+
 const baileys = require("@whiskeysockets/baileys");
 const qrcode = require("qrcode-terminal");
-// const scheduleDailyJob = require("./scheduleDailyJob");
 
 const makeWASocket = baileys.default;
 const { useMultiFileAuthState, fetchLatestBaileysVersion, makeInMemoryStore } =
@@ -9,10 +11,6 @@ const { useMultiFileAuthState, fetchLatestBaileysVersion, makeInMemoryStore } =
 const startBot = async () => {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
   const { version } = await fetchLatestBaileysVersion();
-  //   const store = await makeInMemoryStore();
-
-  //   store.bind(sock.ev);
-  // scheduleDailyJob(sock, store);
 
   const sock = makeWASocket({
     version,
@@ -36,9 +34,9 @@ const startBot = async () => {
     }
   });
 
+  // 📥 Обработчик входящих сообщений + сохранение в БД
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
-    console.log(messages[0]);
 
     const msg = messages[0];
     const text =
@@ -46,6 +44,24 @@ const startBot = async () => {
 
     if (!text) return;
 
+    const author = msg.pushName || "Неизвестный";
+    const time = new Date().toLocaleTimeString();
+    const created = new Date().toISOString();
+
+    // 💾 Сохраняем в таблицу 'information'
+    db.run(
+      `INSERT INTO information (author, message, time, created) VALUES (?, ?, ?, ?)`,
+      [author, text, time, created],
+      (err) => {
+        if (err) {
+          console.error("Ошибка при сохранении в базу:", err.message);
+        } else {
+          console.log(`📥 Сообщение сохранено: ${author} — "${text}"`);
+        }
+      }
+    );
+
+    // Ответы на команды
     if (text === "!ping") {
       await sock.sendMessage(msg.key.remoteJid, { text: "pong" });
     }
