@@ -34,7 +34,6 @@ const startBot = async () => {
     }
   });
 
-  // 📥 Обработчик входящих сообщений + сохранение в БД
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
 
@@ -42,32 +41,29 @@ const startBot = async () => {
     const text =
       msg.message?.conversation || msg.message?.extendedTextMessage?.text;
 
-    if (!text) return;
+    if (!text) {
+      console.log("⛔ Пропущено: нет текстового сообщения");
+      return;
+    }
 
     const author = msg.pushName || "Неизвестный";
     const time = new Date().toLocaleTimeString();
     const created = new Date().toISOString();
 
-    // 💾 Сохраняем в таблицу 'information'
+    console.log(`📥 Новое сообщение: [${time}] ${author}: "${text}"`);
+
+    // 💾 Сохраняем в таблицу information
     db.run(
       `INSERT INTO information (author, message, time, created) VALUES (?, ?, ?, ?)`,
       [author, text, time, created],
       (err) => {
         if (err) {
-          console.error("Ошибка при сохранении в базу:", err.message);
+          console.error("❌ Ошибка при сохранении в БД:", err.message);
         } else {
-          console.log(`📥 Сообщение сохранено: ${author} — "${text}"`);
+          console.log("✅ Сообщение успешно сохранено в БД");
         }
       }
     );
-
-    // Ответы на команды
-    if (text === "!ping") {
-      await sock.sendMessage(msg.key.remoteJid, { text: "pong" });
-    }
-    if (text === "привет") {
-      await sock.sendMessage(msg.key.remoteJid, { text: "привет я бот" });
-    }
   });
 };
 
