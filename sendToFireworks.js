@@ -31,7 +31,7 @@ async function sendToFireworks(prompt) {
     });
 
     const data = await response.json(); // Преобразуем ответ в JSON
-    console.log("Ответ от Fireworks AI:", data); // Логируем результат
+    console.log("Ответ от Fireworks AI:", data.choices[0].message.content); // Логируем результат
 
     // Здесь можно добавить логику для обработки результата, если нужно
   } catch (error) {

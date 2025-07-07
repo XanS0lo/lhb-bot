@@ -12,6 +12,23 @@ const { useMultiFileAuthState, fetchLatestBaileysVersion, makeInMemoryStore } =
 const { getMessagesFromLast24Hours, generatePrompt } = require("./utils");
 const sendToFireworks = require("./sendToFireworks.js"); // Импортируем функцию для отправки в Fireworks AI
 
+// Функция для асинхронной вставки сообщения в БД
+const insertMessageIntoDB = (author, text, time, created) => {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT INTO information (author, message, time, created) VALUES (?, ?, ?, ?)`,
+      [author, text, time, created],
+      (err) => {
+        if (err) {
+          reject("❌ Ошибка при сохранении в БД:" + err.message);
+        } else {
+          resolve("✅ Сообщение успешно сохранено в БД");
+        }
+      }
+    );
+  });
+};
+
 // Внутри функции startBot
 const startBot = async () => {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
@@ -33,7 +50,7 @@ const startBot = async () => {
     if (connection === "open") {
       console.log("✅ Бот подключён к WhatsApp!");
       // Добавим вывод участников чата после подключения
-      const chatId = "id_вашего_чата"; // Замените на реальный ID чата
+      const chatId = "120363421292722557@g.us"; // Замените на реальный ID чата
       printChatParticipants(sock, chatId); // Получаем и выводим участников чата
     }
 
@@ -60,21 +77,19 @@ const startBot = async () => {
 
     console.log(`📥 Новое сообщение: [${time}] ${author}: "${text}"`);
 
-    // 💾 Сохраняем в таблицу information
-    db.run(
-      `INSERT INTO information (author, message, time, created) VALUES (?, ?, ?, ?)`,
-      [author, text, time, created],
-      (err) => {
-        if (err) {
-          console.error("❌ Ошибка при сохранении в БД:", err.message);
-        } else {
-          console.log("✅ Сообщение успешно сохранено в БД");
-        }
-      }
-    );
+    try {
+      // 💾 Асинхронно сохраняем в таблицу information
+      await insertMessageIntoDB(author, text, time, created); // Дожидаемся завершения вставки
 
-    // После сохранения сообщения, вызываем анализ сообщений
-    analyzeMessages(); // Вызываем функцию для анализа и отправки в нейронку
+      // Теперь проверяем на ключевое слово
+      if (text.toLowerCase().includes("sum")) {
+        console.log("🔍 Обнаружено ключевое слово 'sum', формируем отчет...");
+        // После завершения вставки, вызываем анализ сообщений
+        await analyzeMessages(); // Дожидаемся завершения анализа
+      }
+    } catch (error) {
+      console.error(error); // Логируем ошибку, если вставка не удалась
+    }
   });
 };
 
