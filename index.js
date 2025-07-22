@@ -1,5 +1,5 @@
 const initDatabase = require("./db");
-const db = initDatabase(); // Инициализация базы данных
+const db = require("./db.js")();
 
 const baileys = require("@whiskeysockets/baileys");
 const qrcode = require("qrcode-terminal");
@@ -9,27 +9,30 @@ const { useMultiFileAuthState, fetchLatestBaileysVersion, makeInMemoryStore } =
   baileys;
 
 // Импортируем функции из utils.js
-const { getMessagesFromLast24Hours, generatePrompt } = require("./utils");
-const sendToFireworks = require("./sendToFireworks.js"); // Импортируем функцию для отправки в Fireworks AI
+const {
+  getMessagesFromLast24Hours,
+  generatePrompt,
+  storeEmbedding,
+  findSimilarEmbeddings,
+} = require("./utils");
+const sendToFireworks = require("./sendToFireworks.js");
 
-// Функция для асинхронной вставки сообщения в БД
 const insertMessageIntoDB = (author, text, time, created) => {
   return new Promise((resolve, reject) => {
     db.run(
       `INSERT INTO information (author, message, time, created) VALUES (?, ?, ?, ?)`,
       [author, text, time, created],
-      (err) => {
+      function (err) {
         if (err) {
           reject("❌ Ошибка при сохранении в БД:" + err.message);
         } else {
-          resolve("✅ Сообщение успешно сохранено в БД");
+          resolve(this.lastID);
         }
       }
     );
   });
 };
 
-// Внутри функции startBot
 const startBot = async () => {
   const { state, saveCreds } = await useMultiFileAuthState("auth");
   const { version } = await fetchLatestBaileysVersion();
@@ -49,9 +52,8 @@ const startBot = async () => {
 
     if (connection === "open") {
       console.log("✅ Бот подключён к WhatsApp!");
-      // Добавим вывод участников чата после подключения
       const chatId = "120363421292722557@g.us"; // Замените на реальный ID чата
-      printChatParticipants(sock, chatId); // Получаем и выводим участников чата
+      printChatParticipants(sock, chatId);
     }
 
     if (connection === "close") {
@@ -78,22 +80,19 @@ const startBot = async () => {
     console.log(`📥 Новое сообщение: [${time}] ${author}: "${text}"`);
 
     try {
-      // 💾 Асинхронно сохраняем в таблицу information
-      await insertMessageIntoDB(author, text, time, created); // Дожидаемся завершения вставки
+      const result = await insertMessageIntoDB(author, text, time, created);
+      await storeEmbedding(result, text);
 
-      // Теперь проверяем на ключевое слово
       if (text.toLowerCase().includes("sum")) {
         console.log("🔍 Обнаружено ключевое слово 'sum', формируем отчет...");
-        // После завершения вставки, вызываем анализ сообщений
-        await analyzeMessages(); // Дожидаемся завершения анализа
+        await analyzeMessages(text); // Передаем текст запроса
       }
     } catch (error) {
-      console.error(error); // Логируем ошибку, если вставка не удалась
+      console.error(error);
     }
   });
 };
 
-// Функция для получения участников чата
 async function getChatParticipants(sock, chatId) {
   const metadata = await sock.groupMetadata(chatId);
   const participants = metadata.participants.map((p) => ({
@@ -109,20 +108,26 @@ async function getChatParticipants(sock, chatId) {
   return participants;
 }
 
-// Функция для печати участников
 async function printChatParticipants(sock, chatId) {
   const participants = await getChatParticipants(sock, chatId);
   console.log("👥 Участники чата:", participants);
 }
 
-// Функция для анализа сообщений
-async function analyzeMessages() {
-  getMessagesFromLast24Hours((messages) => {
-    const prompt = generatePrompt(messages); // Генерация промта с учётом новых данных
-    console.log("📝 Формируем промт для Fireworks AI:\n", prompt);
-    sendToFireworks(prompt); // Отправляем промт в нейронную сеть
+// ... (остальной код index.js остается тем же)
+
+async function analyzeMessages(queryText) {
+  const similarMessages = await findSimilarEmbeddings(queryText);
+  const allMessages = await new Promise((resolve) => {
+    getMessagesFromLast24Hours((messages) => {
+      resolve([...messages, ...similarMessages]);
+    });
   });
+
+  const prompt = generatePrompt(allMessages);
+  console.log("📝 Формируем промт для Fireworks AI с RAG:\n", prompt);
+  sendToFireworks(prompt);
 }
 
-// Запуск бота
+// ... (остальной код остается тем же)
+
 startBot();
